@@ -1,0 +1,20 @@
+# secrets / private
+.env
+*.env
+# runtime state and logs (live on the box only; the dashboard data goes to gh-pages)
+logs/
+grok_raw/
+alerts.log
+checks.csv
+positions.json
+trades.csv
+costs.csv
+x_queue.jsonl
+x_queue.jsonl.tmp
+bot_verdicts.jsonl
+dashboard/site/data.json
+dashboard/site/data.json.tmp
+dashboard/.publish_repo/
+dashboard/.publish_state/
+__pycache__/
+*.pyc
