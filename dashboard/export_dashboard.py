@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 
 DESK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(DESK); sys.path.insert(0, DESK)
-import book, xqueue
+import book, xqueue, pnl
 from config import (PAPER, MODEL, EXIT, FACTS, TICKET_USD, MAX_OPEN, MAX_ENTRIES_PER_DAY, DAILY_LOSS_HALT_USD,
                     MIN_CONFIDENCE, FRESH_MAX_AGE_HOURS, API_DAILY_BUDGET_USD)
 from desklog import rows, latest_per_mint, REVIEW_VERDICTS
@@ -92,6 +92,7 @@ def positions():
             "qty_left_pct": round(p["qty"] / p["qty0"] * 100, 1),
             "value_usd": round(p["qty"] * cur, 2) if cur else None,
             "unrealized_usd": round(p["qty"] * (cur - e), 2) if cur else None,
+            "unrealized_net_usd": round(p["qty"] * (cur - e) - pnl.unrealized_cost(p["qty"], cur), 2) if cur else None,
             "liq0": p["liq0"], "liq_now": liq, "price_error": err,
             "opened": time.strftime("%Y-%m-%d %H:%M", time.localtime(p["opened"])),
             "held_hours": round(held_h, 1),
@@ -107,13 +108,16 @@ def positions():
     return out
 
 
-# ---- trades + running paper pnl ----
-trades = book.trades()
-closed = [t for t in trades if t["action"] != "open"]
-cum, curve = 0.0, []
+# ---- trades + running paper pnl (gross and net of PAPER_COST_PCT, derived from trades.csv) ----
+trade_legs = pnl.legs()
+closed = [t for t in trade_legs if t["action"] != "open"]
+cum = cum_net = 0.0; curve = []
 for t in closed:
-    cum += float(t["pnl"]); curve.append({"time": t["time"], "pnl": float(t["pnl"]), "cum": round(cum, 2),
-                                          "symbol": t["symbol"], "reason": t["reason"]})
+    cum += t["gross"]; cum_net += t["net"]
+    curve.append({"time": t["time"], "pnl": t["gross"], "pnl_net": t["net"], "cost": t["cost"],
+                  "cum": round(cum, 2), "cum_net": round(cum_net, 2), "symbol": t["symbol"], "reason": t["reason"]})
+trades = [{k: t[k] for k in ("time", "mint", "symbol", "action", "usd", "pnl", "reason")} | {"cost": t["cost"], "net": t["net"]}
+          for t in trade_legs]
 
 # ---- checks ----
 allrows = rows()
@@ -171,8 +175,14 @@ data = {
                "exit": EXIT, "facts": FACTS},
     "scheduler": scheduler(),
     "positions": positions(),
-    "pnl": {"realized_total": round(cum, 2), "realized_today": round(book.today_pnl(), 2),
-            "closed_count": len(closed), "wins": sum(1 for t in closed if float(t["pnl"]) > 0), "curve": curve},
+    "pnl": {"cost_pct": pnl.PAPER_COST_PCT,
+            "realized_total": round(cum, 2), "realized_total_net": round(cum_net, 2),
+            "realized_today": pnl.realized(day)["gross"], "realized_today_net": pnl.realized(day)["net"],
+            "cost_total": pnl.realized()["cost"],
+            "closed_count": len(closed), "wins": sum(1 for t in closed if t["gross"] > 0),
+            "wins_net": sum(1 for t in closed if t["net"] > 0), "curve": curve,
+            "round_trips": pnl.round_trips()[-30:][::-1]},
+    "go_live": pnl.go_live(),
     "trades": trades[-50:][::-1],
     "funnel_today": funnel, "kill_reasons_today": kills.most_common(),
     "recent_checks": recent_checks,

@@ -22,7 +22,7 @@ main{max-width:1280px;margin:0 auto;padding:14px;display:grid;gap:14px;grid-temp
 .card h2 small{color:var(--mut);font-weight:400;font-size:12px}
 .s12{grid-column:span 12}.s8{grid-column:span 8}.s6{grid-column:span 6}.s4{grid-column:span 4}
 .scroll{max-height:540px;overflow:auto}.scroll th{position:sticky;top:0;background:var(--card)}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .kpi{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px}
 .kpi .l{color:var(--mut);font-size:12px}.kpi .v{font-size:20px;font-weight:600;margin-top:2px}
 .pos{color:var(--g)}.neg{color:var(--r)}.mut{color:var(--mut)}.warn{color:var(--y)}
@@ -55,7 +55,12 @@ td.wrap{white-space:normal;min-width:220px;max-width:460px;word-break:break-word
 footer{color:var(--mut);font-size:12px;text-align:center;padding:4px 16px 24px}
 #err{display:none;background:rgba(248,81,73,.15);border:1px solid var(--r);color:#ffa198;padding:8px 12px;border-radius:8px}
 @media(max-width:900px){.s8,.s6,.s4{grid-column:span 12}.rules{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:520px){header{position:static}main{padding:10px;gap:10px}.kpi .v{font-size:18px}.frow{grid-template-columns:118px 1fr 34px}}
+@media(max-width:520px){header{position:static}.kpis{grid-template-columns:1fr 1fr}main{padding:10px;gap:10px}.kpi .v{font-size:18px}.frow{grid-template-columns:118px 1fr 34px}}
+.gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.gate{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start}
+.gate .ic{font-size:18px;line-height:1.2}.gate .l{color:var(--mut);font-size:12px}.gate .v{font-size:16px;font-weight:600}
+.gate.ok{border-color:rgba(63,185,80,.5)}.gate.no{border-color:rgba(248,81,73,.4)}
+.sub{color:var(--mut);font-size:12px;font-weight:400}
 </style>
 </head>
 <body>
@@ -77,12 +82,17 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:4px 16px 24px}
   </section>
 
   <section class="card s12">
+    <h2>实盘门槛 <small>仅供参考，不会自动切换实盘</small></h2>
+    <div class="gates" id="gates"></div>
+  </section>
+
+  <section class="card s12">
     <h2>持仓（模拟） <small id="poscount"></small></h2>
     <div id="positions"></div>
   </section>
 
   <section class="card s8">
-    <h2>累计已实现盈亏（模拟） <small id="pnlsum"></small></h2>
+    <h2>累计盈亏：毛 vs 净（模拟） <small id="pnlsum"></small></h2>
     <div class="chartbox"><canvas id="pnlChart"></canvas></div>
     <div id="pnlEmpty" class="empty" style="display:none">还没有平仓记录。</div>
   </section>
@@ -177,17 +187,31 @@ function render(d){
   if (!d.paper) $("err").style.display = "block", $("err").textContent = "注意：PAPER = False（实盘模式）";
 
   const unreal = d.positions.reduce((a,p) => a + (p.unrealized_usd || 0), 0);
+  const unrealNet = d.positions.reduce((a,p) => a + (p.unrealized_net_usd || 0), 0);
+  const gn = (g, n) => `<span class="${cls(g)}">${sgnUsd(g)}</span><div class="sub">扣成本 <span class="${cls(n)}">${sgnUsd(n)}</span></div>`;
   const f = d.funnel_today, c = d.config;
   $("kpis").innerHTML = [
     ["持仓", `${d.positions.length} / ${c.max_open}`],
-    ["未实现盈亏", `<span class="${cls(unreal)}">${sgnUsd(unreal)}</span>`],
-    ["今日已实现", `<span class="${cls(d.pnl.realized_today)}">${sgnUsd(d.pnl.realized_today)}</span>`],
-    ["累计已实现", `<span class="${cls(d.pnl.realized_total)}">${sgnUsd(d.pnl.realized_total)}</span>`],
-    ["胜率", d.pnl.closed_count ? `${d.pnl.wins}/${d.pnl.closed_count}` : "—"],
+    ["未实现盈亏（毛）", gn(unreal, unrealNet)],
+    ["今日已实现（毛）", gn(d.pnl.realized_today, d.pnl.realized_today_net)],
+    ["累计已实现（毛）", gn(d.pnl.realized_total, d.pnl.realized_total_net)],
+    ["胜率（毛 / 净）", d.pnl.closed_count ? `${d.pnl.wins}/${d.pnl.closed_count}<div class="sub">净 ${d.pnl.wins_net}/${d.pnl.closed_count}</div>` : "—"],
+    ["交易成本估算", `${usd(d.pnl.cost_total)}<div class="sub">卖出金额的 ${d.pnl.cost_pct}%</div>`],
     ["今日检查", f.checked],
     ["今日 API 花费", `${usd(d.api.today_usd)} <span class="mut" style="font-size:13px">/ ${usd(d.api.budget_usd,0)}</span>`],
     ["待 Bot 判断", d.queue.length],
   ].map(([l,v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+
+  // go-live gates (informational)
+  const g = d.go_live;
+  $("gates").innerHTML = [
+    [g.trades_met, "已平仓笔数", `${g.closed_trades} / ${g.min_trades}`],
+    [g.net_met, "累计净盈亏 > 0（扣成本）", sgnUsd(g.net_total)],
+    [g.beyond_stop_met, `亏损超过止损线（${g.stop_pct}%）的笔数`, `${g.beyond_stop} 笔`],
+  ].map(([ok,l,v]) => `<div class="gate ${ok ? "ok" : "no"}"><div class="ic">${ok ? "✅" : "❌"}</div><div><div class="l">${l}</div>
+    <div class="v">${v}</div><div class="sub">${ok ? "已达标" : "未达标"}</div></div></div>`).join("") +
+    `<div class="gate ${g.all_met ? "ok" : "no"}"><div class="ic">${g.all_met ? "🟢" : "⏸️"}</div><div><div class="l">总体</div>
+    <div class="v">${g.all_met ? "三项均达标" : "继续模拟盘"}</div><div class="sub">达标也需你手动决定是否实盘</div></div></div>`;
 
   // positions
   $("poscount").textContent = `每笔 $${c.ticket_usd} · 最多 ${c.max_open} 笔`;
@@ -198,7 +222,7 @@ function render(d){
     return `<div class="poscard"><div class="poshead">
       <a class="sym" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.symbol)}</a>
       <span class="mut">${short(p.mint)}</span>
-      <span>浮动 <b class="${cls(p.pct)}">${pct(p.pct)}</b> (${sgnUsd(p.unrealized_usd)})</span>
+      <span>浮动 <b class="${cls(p.pct)}">${pct(p.pct)}</b> (毛 ${sgnUsd(p.unrealized_usd)} · 扣成本 <b class="${cls(p.unrealized_net_usd)}">${sgnUsd(p.unrealized_net_usd)}</b>)</span>
       <span class="mut">开仓 ${esc(p.opened)} · 持有 ${p.held_hours} 小时 · 剩余 ${p.qty_left_pct}%</span>
       ${p.price_error ? `<span class="warn">价格获取失败</span>` : ""}</div>
       <div class="rules">
@@ -213,18 +237,18 @@ function render(d){
       </div></div>`;
   }).join("") : `<div class="empty">当前没有持仓。</div>`;
 
-  // pnl chart: realized after each close, plus a dashed "now incl. unrealized" point
-  const curve = d.pnl.curve, last = curve.length ? curve[curve.length-1].cum : 0;
-  $("pnlsum").textContent = `${d.pnl.closed_count} 笔平仓 · 已实现 ${sgnUsd(d.pnl.realized_total)} · 含浮动 ${sgnUsd(last + unreal)}`;
+  // pnl chart: gross and net realized after each sell leg, plus dashed "now incl. unrealized" points
+  const curve = d.pnl.curve, last = curve.length ? curve[curve.length-1].cum : 0, lastN = curve.length ? curve[curve.length-1].cum_net : 0;
+  $("pnlsum").textContent = `${d.pnl.closed_count} 笔卖出 · 已实现 毛 ${sgnUsd(d.pnl.realized_total)} / 净 ${sgnUsd(d.pnl.realized_total_net)} · 含浮动 毛 ${sgnUsd(last + unreal)} / 净 ${sgnUsd(lastN + unrealNet)}`;
   $("pnlEmpty").style.display = curve.length ? "none" : "block";
-  $("pnlEmpty").textContent = "还没有平仓记录；虚线为当前含浮动盈亏。";
-  const labels = ["起点", ...curve.map(x => x.time.slice(5)), "现在"];
+  $("pnlEmpty").textContent = `还没有平仓记录；虚线为当前含浮动盈亏。净值按卖出金额的 ${d.pnl.cost_pct}% 扣除滑点和手续费。`;
+  const labels = ["起点", ...curve.map(x => x.time.slice(5)), "现在"], pad = Array(curve.length).fill(null);
   chart("pnlChart", {type:"line", data:{labels, datasets:[
-      {label:"已实现", data:[0, ...curve.map(x => x.cum), null], borderColor:"#58a6ff", backgroundColor:"rgba(88,166,255,.12)", fill:true, tension:.2, pointRadius:3},
-      {label:"含浮动", data:[...Array(curve.length).fill(null), last, +(last + unreal).toFixed(2)], borderColor:unreal >= 0 ? "#3fb950" : "#f85149", borderDash:[5,4], pointRadius:3, spanGaps:true}]},
-    options:{maintainAspectRatio:false, plugins:{legend:{labels:{boxWidth:12}}, tooltip:{callbacks:{label:i => {
-        if (i.datasetIndex === 1) return `含浮动 ${sgnUsd(i.raw)}`; if (!i.dataIndex) return "0";
-        const x = curve[i.dataIndex-1]; return `${x.symbol} ${sgnUsd(x.pnl)} → 累计 ${sgnUsd(i.raw)}`; }}}},
+      {label:"毛盈亏", data:[0, ...curve.map(x => x.cum), null], borderColor:"#58a6ff", backgroundColor:"rgba(88,166,255,.10)", fill:true, tension:0, pointRadius:3},
+      {label:"净盈亏（扣成本）", data:[0, ...curve.map(x => x.cum_net), null], borderColor:"#d29922", tension:0, pointRadius:3},
+      {label:"毛·含浮动", data:[...pad, last, +(last + unreal).toFixed(2)], borderColor:"#58a6ff", borderDash:[5,4], pointRadius:3, spanGaps:true},
+      {label:"净·含浮动", data:[...pad, lastN, +(lastN + unrealNet).toFixed(2)], borderColor:"#d29922", borderDash:[5,4], pointRadius:3, spanGaps:true}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{labels:{boxWidth:12}}, tooltip:{callbacks:{label:i => `${i.dataset.label} ${sgnUsd(i.raw)}`}}},
       scales:{y:{ticks:{callback:v => "$" + v}}}}});
 
   // funnel
@@ -276,9 +300,11 @@ function render(d){
     : `<tr><td class="empty">还没有 Bot 结论。</td></tr>`;
 
   // trades
-  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>盈亏</th><th>原因</th></tr>` +
+  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>毛盈亏</th><th>成本</th><th>净盈亏</th><th>原因</th></tr>` +
     d.trades.map(t => `<tr><td class="mut">${esc(t.time.slice(5))}</td><td><a href="https://dexscreener.com/solana/${esc(t.mint)}" target="_blank" rel="noopener">${esc(t.symbol)}</a></td>
-      <td>${esc(ACTION[t.action] || t.action)}</td><td>$${esc(t.usd)}</td><td class="${cls(+t.pnl)}">${t.action === "open" ? "" : sgnUsd(+t.pnl)}</td><td>${esc(t.reason)}</td></tr>`).join("")
+      <td>${esc(ACTION[t.action] || t.action)}</td><td>$${esc(t.usd)}</td><td class="${cls(+t.pnl)}">${t.action === "open" ? "" : sgnUsd(+t.pnl)}</td>
+      <td class="mut">${t.action === "open" ? "" : "$" + t.cost.toFixed(2)}</td>
+      <td class="${cls(t.net)}">${t.action === "open" ? "" : sgnUsd(t.net)}</td><td>${esc(t.reason)}</td></tr>`).join("")
     : `<tr><td class="empty">还没有成交。</td></tr>`;
 
   $("alerts").textContent = d.alerts.length ? d.alerts.join("\n") : "暂无提醒。";

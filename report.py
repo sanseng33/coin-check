@@ -3,7 +3,7 @@
 import csv, os, time
 from collections import Counter
 from config import LOG, PAPER, API_DAILY_BUDGET_USD
-import book, xqueue
+import book, xqueue, pnl
 from desklog import latest_per_mint
 
 day = time.strftime("%Y-%m-%d")
@@ -36,13 +36,32 @@ if reviews:
     print(f"position reviews today: {sum(r['verdict'] == 'HOLD' for r in reviews)} HOLD, "
           f"{sum(r['verdict'] == 'EXIT_SUGGESTED' for r in reviews)} EXIT_SUGGESTED")
 print(f"bought: {len(buys)} | open now: {len(book.load())}")
-print(f"realized pnl today: ${book.today_pnl():+.2f}")
+r_day, r_all = pnl.realized(day), pnl.realized()
+print(f"realized pnl today: gross ${r_day['gross']:+.2f} | net ${r_day['net']:+.2f} "
+      f"(cost {pnl.PAPER_COST_PCT}% of sells: ${r_day['cost']:.2f})")
+print(f"realized pnl all time: gross ${r_all['gross']:+.2f} | net ${r_all['net']:+.2f}")
+unr_g = unr_c = 0.0
+for _m, _p in book.load().items():
+    try:
+        from market import pool
+        _px = (pool(_m) or {}).get("price") or 0
+        unr_g += _p["qty"] * (_px - _p["entry"]); unr_c += pnl.unrealized_cost(_p["qty"], _px)
+    except Exception:
+        pass
+if book.load():
+    print(f"open positions unrealized: gross ${unr_g:+.2f} | net ${unr_g - unr_c:+.2f}")
+gl = pnl.go_live()
+print(f"go-live gate: closed trades {gl['closed_trades']}/{gl['min_trades']} {'OK' if gl['trades_met'] else 'no'} | "
+      f"net total ${gl['net_total']:+.2f} {'OK' if gl['net_met'] else 'no'} | "
+      f"losses beyond stop ({gl['stop_pct']}%): {gl['beyond_stop']} {'OK' if gl['beyond_stop_met'] else 'no'}")
 print(f"xAI API spend today: ${xqueue.spent_today():.2f} of ${API_DAILY_BUDGET_USD:.2f} budget")
 if done:
-    print(f"green exits: {len(wins)}/{len(done)}")
-    best = max(done, key=lambda t: float(t["pnl"]))
-    worst = min(done, key=lambda t: float(t["pnl"]))
-    print(f"best: {best['symbol']} ${float(best['pnl']):+.2f} | worst: {worst['symbol']} ${float(worst['pnl']):+.2f}")
+    print(f"green exits: {len(wins)}/{len(done)} gross, "
+          f"{sum(1 for l in pnl.legs(done) if l['net'] > 0)}/{len(done)} net")
+    dl = [l for l in pnl.legs(done)]
+    best = max(dl, key=lambda t: t["gross"]); worst = min(dl, key=lambda t: t["gross"])
+    print(f"best: {best['symbol']} ${best['gross']:+.2f} (net ${best['net']:+.2f}) | "
+          f"worst: {worst['symbol']} ${worst['gross']:+.2f} (net ${worst['net']:+.2f})")
 if reasons:
     top, n = reasons.most_common(1)[0]
     print(f"most common kill: {top} ({n}x)")

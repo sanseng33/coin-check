@@ -39,6 +39,8 @@ FRESH_MAX_AGE_HOURS = 6     # passed 13 checks and pool younger than this -> pai
                             # older (low urgency) -> x_queue.jsonl for the bot's free X search
 API_DAILY_BUDGET_USD = 3.0  # today's costs.csv total reaches this -> fresh tokens are queued too
 QUEUE = "x_queue.jsonl"
+PAPER_COST_PCT = 5.0        # [desk] round-trip slippage + fees estimate, % of each SELL leg's notional
+                            # (a partial take-profit bears its share). reporting only: never changes a trigger
 
 LOG = "checks.csv"
 POSITIONS = "positions.json"

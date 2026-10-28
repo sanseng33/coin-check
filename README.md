@@ -89,6 +89,14 @@ grok.py also refuses (SKIP) any answer where no X search actually ran. Every cal
 - DexScreener `pairCreatedAt` is the pool's age; for pump.fun tokens that graduated, that is the migration time, not the launch time.
 - Pump.fun bonding-curve pools have no `liquidity` on DexScreener -> always `thin_pool` (conservative, intended).
 
+## Trading-cost accounting (reporting only)
+`PAPER_COST_PCT = 5.0` in config.py: a round-trip slippage + fees estimate charged on each SELL leg's notional
+(trades.csv `usd` of every partial/close; a partial take-profit bears its share). `pnl.py` derives gross / cost / net from
+trades.csv on read (history untouched). Exit triggers and the daily-loss halt still use gross prices, unchanged.
+report.py and the dashboard show gross and net everywhere; open positions show net = gross minus the cost of selling now.
+Go-live panel (实盘门槛, informational): closed round trips >= 20, net total > 0, and no closed trade that lost more than
+the stop (-35% of the ticket, gross).
+
 ## Dashboard (observability page) - `dashboard/`
 Static site, no build step: `dashboard/site/index.html` (vanilla JS + Chart.js from jsDelivr) reads `dashboard/site/data.json`
 and refreshes every 60 s. Chinese UI, dark, mobile-friendly, marked 模拟盘 PAPER.
@@ -110,6 +118,7 @@ Page: branch `gh-pages` = `index.html` + `data.json` + `.nojekyll` (+ `CNAME`), 
 - Custom domain: put the domain on one line in `dashboard/CNAME` (e.g. `desk.example.com`), then at your DNS add
   `CNAME desk.example.com -> sanseng33.github.io` (apex: A records 185.199.108.153 / .109.153 / .110.153 / .111.153),
   set it under repo Settings -> Pages -> Custom domain, and tick "Enforce HTTPS" once the certificate is issued.
+- Live: https://sanseng33.github.io/coin-check/ (repo is public).
 - Private repos: GitHub Pages from a private repo needs a paid plan (Pro / Team / Enterprise). Access-restricted
   ("private") Pages, visible only to people with repo access, needs GitHub Enterprise Cloud; on Pro/Team the site is public
   even though the repo is private. The data is paper-only with no secrets, but it does show strategy, positions and costs.
