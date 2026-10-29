@@ -9,7 +9,7 @@ Requires Python 3.10+ and `requests` (already installed on the box).
 | what | command |
 | --- | --- |
 | check one token (CA / mint) | `python3 check.py <MINT>` |
-| pull 5 fresh Solana tokens from DexScreener profiles and check each | `python3 scan.py` |
+| pull 5 fresh Solana tokens from DexScreener profiles and check each, then re-check up to 5 recent pool-stage rejects | `python3 scan.py` |
 | guard open paper positions (stop / ladder / trail / time stop); prints nothing if nothing happened | `python3 watch.py` |
 | evening report (latest verdict per mint, API spend vs budget, queue size) | `python3 report.py` |
 | queue every open paper position for a bot X re-read | `python3 queue_positions.py` |
@@ -42,7 +42,7 @@ No cron on this box (PID 1 is tini, no crond), so `scheduler.py` is a small loop
 - It survives the starting shell/session ending, but **not a box restart**: after a restart run `./scheduler.sh start` again.
 
 ## Files
-- `config.py` - every number (untouched from the article). `PAPER = True`.
+- `config.py` - every number (article values; owner-approved changes: MODEL, LOW_TIER/RECHECK). `PAPER = True`.
 - `book.py` - limits, positions.json, trades.csv
 - `rugcheck.py` - checks 1-9 (Rugcheck API), `market.py` - checks 10-13 (DexScreener API)
 - `grok.py` + `prompts.py` - check 14 (xAI + X search, the only paid step)
@@ -87,7 +87,24 @@ grok.py also refuses (SKIP) any answer where no X search actually ran. Every cal
 - NO_KEY tokens are in checks.csv, so scan.py treats them as seen and will not re-check them after the key is added.
   Re-run them by hand with `python3 check.py <MINT>` if still interesting.
 - DexScreener `pairCreatedAt` is the pool's age; for pump.fun tokens that graduated, that is the migration time, not the launch time.
-- Pump.fun bonding-curve pools have no `liquidity` on DexScreener -> always `thin_pool` (conservative, intended).
+- Pump.fun bonding-curve pools have no `liquidity` on DexScreener -> `bonding_curve` (was `thin_pool`; conservative, intended).
+
+## Tiered liquidity (2026-10-29, owner-approved: "调整门槛，但是要聪明。你来定")
+`config.py` `LOW_TIER` / `RECHECK`, logic in `market.py` (`tier()`, `market_kill(m, token)`), `scan.py` (re-checks), all `[desk fix]`.
+- **Tier A** - pool >= `FACTS["min_liquidity_usd"]` ($30k): the article's rules, unchanged.
+- **Tier B** - pool $12k-30k: also needs pool age >= 2h, priceChange h1 > -30% and h6 > -50%, 1h volume <= 4x pool liquidity,
+  top-10 holders <= 20% (A: 30%), and a BUY (Grok API or bot) at confidence >= 0.8 (A: 0.7).
+  Rejects: `lowtier_too_young` / `lowtier_dumping` / `lowtier_churn` / `lowtier_top10`; under $12k stays `thin_pool`;
+  liquidity 0 on a pump.fun pair = `bonding_curve`. The 1% `max_ticket_share` still applies ($25 <= 1% of the pool).
+- **Re-checks** - pool-stage rejects (thin / too fresh / bonding curve / tier B rules) are re-checked by `scan.py`: first seen in the
+  last 24h, at most once an hour per mint, up to 5 per scan on top of the 5 fresh ones. Before this a reject was final.
+- **Tagging** - `positions.json` and `trades.csv` carry `tier` (A/B; `trades.csv` got a `tier` column, older rows = A).
+  `pnl.by_tier()` splits closed round trips; the dashboard shows the tier on positions/trades and an A vs B line under 实盘门槛.
+- **Why** (66 thin_pool rejects 10/28-29, re-fetched 10/29 21:00 UTC+8 + GeckoTerminal 5-min candles): 41 were still on the
+  pump.fun bonding curve; the 16 graduated pools were 4-57 min old at check; of the 9 in the $10k-30k band, 7 are down 90-100% since.
+  Replay with the desk's exits: a flat $10k floor buys 10 of them in their first hour, all 10 hit the -35% stop. With the tier B rules,
+  none of the 66 passes at check time; re-fetched now, 0 pass (closest: SUPER top-10 23.6%, HASHTAG 6h -51.5%).
+  Exits, ticket, MAX_OPEN and the loss halt are unchanged. Compare A vs B at the week-end review before keeping tier B.
 
 ## Trading-cost accounting (reporting only)
 `PAPER_COST_PCT = 5.0` in config.py: a round-trip slippage + fees estimate charged on each SELL leg's notional
@@ -108,7 +125,7 @@ and refreshes every 60 s. Chinese UI, dark, mobile-friendly, marked 模拟盘 PA
 - Scheduler also catches up a missed :00/:30 scan (the box can sleep; runs then happen late, not on the dot).
 
 ### Publishing to GitHub Pages
-Source code: branch `main` of https://github.com/sanseng33/coin-check (private). Runtime data, logs, grok_raw and .env are git-ignored.
+Source code: branch `main` of https://github.com/sanseng33/coin-check (public). Runtime data, logs, grok_raw and .env are git-ignored.
 Page: branch `gh-pages` = `index.html` + `data.json` + `.nojekyll` (+ `CNAME`), one generated commit, force-pushed.
 - `dashboard/publish.conf` - repo / branch / heartbeat (not secret). `dashboard/publish.sh` - build + push; `DRY_RUN=1` builds locally only.
 - The scheduler runs it after every 10-min export (logs/publish.log). It pushes only when data.json changed in substance

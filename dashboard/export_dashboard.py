@@ -7,7 +7,7 @@ DESK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(DESK); sys.path.insert(0, DESK)
 import book, xqueue, pnl
 from config import (PAPER, MODEL, EXIT, FACTS, TICKET_USD, MAX_OPEN, MAX_ENTRIES_PER_DAY, DAILY_LOSS_HALT_USD,
-                    MIN_CONFIDENCE, FRESH_MAX_AGE_HOURS, API_DAILY_BUDGET_USD)
+                    MIN_CONFIDENCE, FRESH_MAX_AGE_HOURS, API_DAILY_BUDGET_USD, LOW_TIER, RECHECK)
 from desklog import rows, latest_per_mint, REVIEW_VERDICTS
 
 OUT = os.path.join(DESK, "dashboard", "site", "data.json")
@@ -85,7 +85,7 @@ def positions():
         held_h = (now - p["opened"]) / 3600
         steps = p["steps"]; ladder = EXIT["ladder"]
         out.append({
-            "mint": mint, "symbol": p["symbol"], "url": DS + mint,
+            "mint": mint, "symbol": p["symbol"], "url": DS + mint, "tier": p.get("tier", "A"),   # [desk fix]
             "entry": e, "current": cur, "peak": p["peak"],
             "pct": round((cur / e - 1) * 100, 1) if cur else None,
             "peak_pct": round((p["peak"] / e - 1) * 100, 1),
@@ -116,7 +116,8 @@ for t in closed:
     cum += t["gross"]; cum_net += t["net"]
     curve.append({"time": t["time"], "pnl": t["gross"], "pnl_net": t["net"], "cost": t["cost"],
                   "cum": round(cum, 2), "cum_net": round(cum_net, 2), "symbol": t["symbol"], "reason": t["reason"]})
-trades = [{k: t[k] for k in ("time", "mint", "symbol", "action", "usd", "pnl", "reason")} | {"cost": t["cost"], "net": t["net"]}
+trades = [{k: t[k] for k in ("time", "mint", "symbol", "action", "usd", "pnl", "reason")} | {"cost": t["cost"], "net": t["net"],
+           "tier": t.get("tier") or "A"}
           for t in trade_legs]
 
 # ---- checks ----
@@ -172,7 +173,7 @@ data = {
     "config": {"ticket_usd": TICKET_USD, "max_open": MAX_OPEN, "max_entries_per_day": MAX_ENTRIES_PER_DAY,
                "daily_loss_halt_usd": DAILY_LOSS_HALT_USD, "min_confidence": MIN_CONFIDENCE,
                "fresh_max_age_hours": FRESH_MAX_AGE_HOURS, "api_budget_usd": API_DAILY_BUDGET_USD,
-               "exit": EXIT, "facts": FACTS},
+               "exit": EXIT, "facts": FACTS, "low_tier": LOW_TIER, "recheck": RECHECK},
     "scheduler": scheduler(),
     "positions": positions(),
     "pnl": {"cost_pct": pnl.PAPER_COST_PCT,
@@ -183,6 +184,7 @@ data = {
             "wins_net": sum(1 for t in closed if t["net"] > 0), "curve": curve,
             "round_trips": pnl.round_trips()[-30:][::-1]},
     "go_live": pnl.go_live(),
+    "by_tier": pnl.by_tier(),
     "trades": trades[-50:][::-1],
     "funnel_today": funnel, "kill_reasons_today": kills.most_common(),
     "recent_checks": recent_checks,

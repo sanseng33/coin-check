@@ -37,10 +37,10 @@ def round_trips() -> list[dict]:
         m = l["mint"]
         if l["action"] == "open":
             open_[m] = {"mint": m, "symbol": l["symbol"], "opened": l["time"], "ticket": float(l["usd"]) or TICKET_USD,
-                        "gross": 0.0, "cost": 0.0, "legs": 0}
+                        "gross": 0.0, "cost": 0.0, "legs": 0, "tier": l.get("tier") or "A"}   # [desk fix] tier
             continue
         p = open_.setdefault(m, {"mint": m, "symbol": l["symbol"], "opened": None, "ticket": TICKET_USD,
-                                 "gross": 0.0, "cost": 0.0, "legs": 0})
+                                 "gross": 0.0, "cost": 0.0, "legs": 0, "tier": l.get("tier") or "A"})
         p["gross"] += l["gross"]; p["cost"] += l["cost"]; p["legs"] += 1
         if l["action"] == "close":
             p.update(closed=l["time"], exit_reason=l["reason"], net=round(p["gross"] - p["cost"], 2),
@@ -49,6 +49,17 @@ def round_trips() -> list[dict]:
             p["beyond_stop"] = p["gross_pct"] < EXIT["stop_pct"]
             done.append(open_.pop(m))
     return done
+
+
+def by_tier() -> dict:
+    """[desk fix] closed round trips split by liquidity tier, for the week-end review (A >= $30k, B $12k-30k)."""
+    out = {}
+    for t in ("A", "B"):
+        rt = [r for r in round_trips() if r.get("tier", "A") == t]
+        out[t] = {"closed": len(rt), "gross": round(sum(r["gross"] for r in rt), 2),
+                  "net": round(sum(r["net"] for r in rt), 2), "wins_net": sum(1 for r in rt if r["net"] > 0),
+                  "beyond_stop": sum(1 for r in rt if r["beyond_stop"])}
+    return out
 
 
 def go_live(min_trades: int = 20) -> dict:

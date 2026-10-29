@@ -84,6 +84,7 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:4px 16px 24px}
   <section class="card s12">
     <h2>实盘门槛 <small>仅供参考，不会自动切换实盘</small></h2>
     <div class="gates" id="gates"></div>
+    <div class="sub" id="tiers" style="margin-top:8px"></div>
   </section>
 
   <section class="card s12">
@@ -165,7 +166,10 @@ const REASON = {thin_pool:"池子太浅", insiders:"内部人/捆绑", top10_hea
   too_fresh:"太新", too_old:"太老", ticket_too_big:"仓位占池子过大", nobody_can_sell:"无人能卖(貔貅)", lp_unlocked:"LP 未锁",
   mint_open:"增发权限未放弃", freeze_open:"冻结权限未放弃", risk_score:"风险分过高", dev_holds:"开发者持仓过多",
   already_rugged:"已被 rug", no_report:"无 Rugcheck 报告", already_open:"已持有", max_open:"持仓已满", cooldown:"冷却中",
-  max_entries_today:"今日开仓已满", halted_daily_loss:"日亏损熔断"};
+  max_entries_today:"今日开仓已满", halted_daily_loss:"日亏损熔断",
+  bonding_curve:"还在 pump.fun 内盘", lowtier_too_young:"小池子：上线不足 2 小时", lowtier_dumping:"小池子：正在下跌",
+  lowtier_churn:"小池子：成交量异常（疑似刷量）", lowtier_top10:"小池子：前十持仓 > 20%"};
+const TIER = t => t === "B" ? `<span class="tag t-QUEUED" title="小池子档 $12k–30k，规则更严">B 档</span>` : `<span class="tag" title="池子 ≥ $30k，原规则">A 档</span>`;
 const DANGER = {"Low Liquidity":"流动性低", "Creator history of rugged tokens":"创建者有 rug 历史",
   "Large Amount of LP Unlocked":"大量 LP 未锁", "Single holder ownership":"单一地址持仓高", "High holder concentration":"持仓高度集中",
   "Copycat token":"仿冒代币", "Mutable metadata":"元数据可修改", "High holder correlation":"持有人高度关联", "Low amount of LP Providers":"LP 提供者少"};
@@ -212,6 +216,11 @@ function render(d){
     <div class="v">${v}</div><div class="sub">${ok ? "已达标" : "未达标"}</div></div></div>`).join("") +
     `<div class="gate ${g.all_met ? "ok" : "no"}"><div class="ic">${g.all_met ? "🟢" : "⏸️"}</div><div><div class="l">总体</div>
     <div class="v">${g.all_met ? "三项均达标" : "继续模拟盘"}</div><div class="sub">达标也需你手动决定是否实盘</div></div></div>`;
+  // [desk fix] per-tier closed trades (A: pool >= $30k, B: $12k-30k with stricter rules)
+  const bt = d.by_tier || {}, lt = c.low_tier || {};
+  $("tiers").innerHTML = ["A","B"].map(t => { const x = bt[t] || {closed:0, net:0, wins_net:0};
+    return `${TIER(t)} 已平仓 ${x.closed} 笔 · 净 <span class="${cls(x.net)}">${sgnUsd(x.net)}</span> · 净赚 ${x.wins_net}/${x.closed}`; }).join(" &nbsp;|&nbsp; ") +
+    (lt.min_liquidity_usd ? `<div class="mut">B 档条件：池子 ${big(lt.min_liquidity_usd)}–${big(c.facts.min_liquidity_usd)}，上线 ≥ ${lt.min_age_min/60} 小时，1h 跌幅 &lt; ${-lt.min_change_1h_pct}%，6h 跌幅 &lt; ${-lt.min_change_6h_pct}%，1h 成交 ≤ ${lt.max_vol1h_to_liq} 倍池子，前十 ≤ ${lt.max_top10_pct}%，买入置信度 ≥ ${lt.min_confidence}</div>` : "");
 
   // positions
   $("poscount").textContent = `每笔 $${c.ticket_usd} · 最多 ${c.max_open} 笔`;
@@ -220,7 +229,7 @@ function render(d){
     const ts = r.time_stop_in_hours > 0 ? `${r.time_stop_in_hours.toFixed(1)} 小时后检查（需 ≥ +${r.time_stop_min_pct}%）`
       : `已到期，需 ≥ +${r.time_stop_min_pct}%`;
     return `<div class="poscard"><div class="poshead">
-      <a class="sym" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.symbol)}</a>
+      <a class="sym" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.symbol)}</a> ${TIER(p.tier)}
       <span class="mut">${short(p.mint)}</span>
       <span>浮动 <b class="${cls(p.pct)}">${pct(p.pct)}</b> (毛 ${sgnUsd(p.unrealized_usd)} · 扣成本 <b class="${cls(p.unrealized_net_usd)}">${sgnUsd(p.unrealized_net_usd)}</b>)</span>
       <span class="mut">开仓 ${esc(p.opened)} · 持有 ${p.held_hours} 小时 · 剩余 ${p.qty_left_pct}%</span>
@@ -265,7 +274,7 @@ function render(d){
   $("killChart").parentElement.style.display = k.length ? "block" : "none";
   if (k.length){ $("killChart").parentElement.style.height = Math.max(160, k.length*28+30) + "px";
     chart("killChart", {type:"bar", data:{labels:k.map(x => reasonZh(x[0])), datasets:[{data:k.map(x => x[1]),
-      backgroundColor:k.map(x => x[0].startsWith("danger") ? "#f85149" : ["thin_pool","no_pool","no_price","too_fresh","too_old","ticket_too_big","nobody_can_sell"].includes(x[0]) ? "#db6d28" : "#d29922")}]},
+      backgroundColor:k.map(x => x[0].startsWith("danger") ? "#f85149" : ["thin_pool","bonding_curve","no_pool","no_price","too_fresh","too_old","ticket_too_big","nobody_can_sell"].includes(x[0]) ? "#db6d28" : "#d29922")}]},
       options:{indexAxis:"y", maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{precision:0}}}}}); }
 
   // api
@@ -300,11 +309,11 @@ function render(d){
     : `<tr><td class="empty">还没有 Bot 结论。</td></tr>`;
 
   // trades
-  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>毛盈亏</th><th>成本</th><th>净盈亏</th><th>原因</th></tr>` +
+  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>毛盈亏</th><th>成本</th><th>净盈亏</th><th>原因</th><th>档</th></tr>` +
     d.trades.map(t => `<tr><td class="mut">${esc(t.time.slice(5))}</td><td><a href="https://dexscreener.com/solana/${esc(t.mint)}" target="_blank" rel="noopener">${esc(t.symbol)}</a></td>
       <td>${esc(ACTION[t.action] || t.action)}</td><td>$${esc(t.usd)}</td><td class="${cls(+t.pnl)}">${t.action === "open" ? "" : sgnUsd(+t.pnl)}</td>
       <td class="mut">${t.action === "open" ? "" : "$" + t.cost.toFixed(2)}</td>
-      <td class="${cls(t.net)}">${t.action === "open" ? "" : sgnUsd(t.net)}</td><td>${esc(t.reason)}</td></tr>`).join("")
+      <td class="${cls(t.net)}">${t.action === "open" ? "" : sgnUsd(t.net)}</td><td>${esc(t.reason)}</td><td>${TIER(t.tier)}</td></tr>`).join("")
     : `<tr><td class="empty">还没有成交。</td></tr>`;
 
   $("alerts").textContent = d.alerts.length ? d.alerts.join("\n") : "暂无提醒。";
