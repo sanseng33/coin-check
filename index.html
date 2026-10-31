@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>RUG DESK 模拟盘 · 实时看板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;--g:#3fb950;--r:#f85149;--y:#d29922;--b:#58a6ff;--p:#bc8cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+a{color:var(--b);text-decoration:none}a:hover{text-decoration:underline}
+header{position:sticky;top:0;z-index:5;background:rgba(13,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+h1{font-size:17px;margin:0;display:flex;align-items:center;gap:8px}
+.paper{background:var(--y);color:#000;font-weight:700;border-radius:6px;padding:2px 8px;font-size:13px}
+.meta{color:var(--mut);font-size:12.5px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+main{max-width:1280px;margin:0 auto;padding:14px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+.card h2{font-size:14.5px;margin:0 0 10px;color:var(--fg);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card h2 small{color:var(--mut);font-weight:400;font-size:12px}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s6{grid-column:span 6}.s4{grid-column:span 4}
+.scroll{max-height:540px;overflow:auto}.scroll th{position:sticky;top:0;background:var(--card)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.kpi{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px}
+.kpi .l{color:var(--mut);font-size:12px}.kpi .v{font-size:20px;font-weight:600;margin-top:2px}
+.pos{color:var(--g)}.neg{color:var(--r)}.mut{color:var(--mut)}.warn{color:var(--y)}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap}
+th{color:var(--mut);font-weight:500;font-size:12px}
+td.wrap{white-space:normal;min-width:220px;max-width:460px;word-break:break-word}
+.tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:12px;border:1px solid var(--line)}
+.t-BUY{background:rgba(63,185,80,.15);color:var(--g);border-color:rgba(63,185,80,.4)}
+.t-SKIP{background:rgba(248,81,73,.12);color:#ff7b72;border-color:rgba(248,81,73,.35)}
+.t-QUEUED,.t-HOLD{background:rgba(88,166,255,.12);color:var(--b);border-color:rgba(88,166,255,.35)}
+.t-EXIT_SUGGESTED{background:rgba(210,153,34,.15);color:var(--y)}
+.t-NO_KEY{color:var(--mut)}
+.funnel{display:flex;flex-direction:column;gap:6px}
+.frow{display:grid;grid-template-columns:150px 1fr 44px;gap:8px;align-items:center;font-size:13px}
+.bar{height:16px;border-radius:4px;background:#0d1117;border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%}
+.rules{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;font-size:12.5px}
+.rule{background:#0d1117;border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.rule b{display:block;color:var(--mut);font-weight:500;font-size:11.5px}
+.poscard{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;background:#0d1117}
+.poshead{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+.poshead .sym{font-size:16px;font-weight:600}
+.alerts{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;margin:0;color:#c9d1d9}
+.empty{color:var(--mut);padding:8px 0}
+.chartbox{position:relative;height:220px}
+.budget{height:12px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden;margin:8px 0}
+.budget i{display:block;height:100%;background:var(--b)}
+footer{color:var(--mut);font-size:12px;text-align:center;padding:4px 16px 24px}
+#err{display:none;background:rgba(248,81,73,.15);border:1px solid var(--r);color:#ffa198;padding:8px 12px;border-radius:8px}
+@media(max-width:900px){.s8,.s6,.s4{grid-column:span 12}.rules{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){header{position:static}.kpis{grid-template-columns:1fr 1fr}main{padding:10px;gap:10px}.kpi .v{font-size:18px}.frow{grid-template-columns:118px 1fr 34px}}
+.gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.gate{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start}
+.gate .ic{font-size:18px;line-height:1.2}.gate .l{color:var(--mut);font-size:12px}.gate .v{font-size:16px;font-weight:600}
+.gate.ok{border-color:rgba(63,185,80,.5)}.gate.no{border-color:rgba(248,81,73,.4)}
+.sub{color:var(--mut);font-size:12px;font-weight:400}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ RUG DESK <span class="paper">模拟盘 PAPER</span></h1>
+  <div class="meta">
+    <span id="sched"></span>
+    <span>数据更新：<b id="gen">—</b> (UTC+8)</span>
+    <span id="age"></span>
+    <span>模型：<span id="model">—</span></span>
+  </div>
+</header>
+<main>
+  <div class="s12" id="err"></div>
+
+  <section class="card s12">
+    <h2>总览 <small>模拟成交，非真实资金 · 每 60 秒自动刷新</small></h2>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="card s12">
+    <h2>实盘门槛 <small>仅供参考，不会自动切换实盘</small></h2>
+    <div class="gates" id="gates"></div>
+    <div class="sub" id="tiers" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card s12">
+    <h2>持仓（模拟） <small id="poscount"></small></h2>
+    <div id="positions"></div>
+  </section>
+
+  <section class="card s8">
+    <h2>累计盈亏：毛 vs 净（模拟） <small id="pnlsum"></small></h2>
+    <div class="chartbox"><canvas id="pnlChart"></canvas></div>
+    <div id="pnlEmpty" class="empty" style="display:none">还没有平仓记录。</div>
+  </section>
+
+  <section class="card s4">
+    <h2>今日漏斗</h2>
+    <div class="funnel" id="funnel"></div>
+  </section>
+
+  <section class="card s6">
+    <h2>今日淘汰原因 <small>规则检查（免费）</small></h2>
+    <div class="chartbox"><canvas id="killChart"></canvas></div>
+    <div id="killEmpty" class="empty" style="display:none">今天还没有淘汰记录。</div>
+  </section>
+
+  <section class="card s6">
+    <h2>xAI API 花费 <small id="apisum"></small></h2>
+    <div class="budget"><i id="budgetbar"></i></div>
+    <div class="chartbox" style="height:170px"><canvas id="apiChart"></canvas></div>
+  </section>
+
+  <section class="card s12">
+    <h2>最近检查的代币 <small>每个代币取最新结论</small></h2>
+    <div class="tw scroll"><table id="checks"></table></div>
+  </section>
+
+  <section class="card s6">
+    <h2>待 Bot 用 X 免费搜索判断 <small id="qcount"></small></h2>
+    <div class="tw"><table id="queue"></table></div>
+  </section>
+
+  <section class="card s6">
+    <h2>Bot 的 X 复核结论</h2>
+    <div class="tw"><table id="botv"></table></div>
+  </section>
+
+  <section class="card s6">
+    <h2>成交记录（模拟）</h2>
+    <div class="tw"><table id="trades"></table></div>
+  </section>
+
+  <section class="card s6">
+    <h2>最近提醒 <small>alerts.log</small></h2>
+    <pre class="alerts" id="alerts"></pre>
+  </section>
+
+  <section class="card s12">
+    <h2>调度器运行记录 <small>watch 每 10 分钟 · scan 每 30 分钟</small></h2>
+    <div class="tw"><table id="runs"></table></div>
+  </section>
+</main>
+<footer>模拟盘：所有买卖均为按实时价格记账的虚拟成交，不连接钱包，不构成投资建议。</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const usd = (v, d=2) => v == null ? "—" : (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(d);
+const sgnUsd = v => v == null ? "—" : (v >= 0 ? "+" : "-") + "$" + Math.abs(v).toFixed(2);
+const pct = v => v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+const cls = v => v == null ? "" : v >= 0 ? "pos" : "neg";
+const px = v => v == null ? "—" : (v === 0 ? "0" : v < 0.01 ? v.toPrecision(4) : v.toFixed(4));
+const big = v => v == null ? "—" : v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(1) + "k" : "$" + v.toFixed(0);
+const tag = v => `<span class="tag t-${esc(v)}">${esc(VERDICT[v] || v)}</span>`;
+const short = m => esc(m.slice(0,4) + "…" + m.slice(-4));
+const VERDICT = {BUY:"买入", SKIP:"跳过", QUEUED:"排队中", HOLD:"继续持有", EXIT_SUGGESTED:"建议退出", NO_KEY:"无密钥"};
+const STAGE = {limits:"风控限额", facts:"合约检查", pool:"池子检查", grok:"Grok API", grok_skipped:"未判断(无密钥)", queued_for_bot:"排队给 Bot", bot_x:"Bot X 搜索"};
+const KIND = {token:"新币判断", position:"持仓复核"};
+const ACTION = {open:"开仓", partial:"部分卖出", close:"平仓"};
+const REASON = {thin_pool:"池子太浅", insiders:"内部人/捆绑", top10_heavy:"前十持仓过重", no_pool:"无交易池", no_price:"无价格",
+  too_fresh:"太新", too_old:"太老", ticket_too_big:"仓位占池子过大", nobody_can_sell:"无人能卖(貔貅)", lp_unlocked:"LP 未锁",
+  mint_open:"增发权限未放弃", freeze_open:"冻结权限未放弃", risk_score:"风险分过高", dev_holds:"开发者持仓过多",
+  already_rugged:"已被 rug", no_report:"无 Rugcheck 报告", already_open:"已持有", max_open:"持仓已满", cooldown:"冷却中",
+  max_entries_today:"今日开仓已满", halted_daily_loss:"日亏损熔断",
+  bonding_curve:"还在 pump.fun 内盘", lowtier_too_young:"小池子：上线不足 2 小时", lowtier_dumping:"小池子：正在下跌",
+  lowtier_churn:"小池子：成交量异常（疑似刷量）", lowtier_top10:"小池子：前十持仓 > 20%"};
+const TIER = t => t === "B" ? `<span class="tag t-QUEUED" title="小池子档 $12k–30k，规则更严">B 档</span>` : `<span class="tag" title="池子 ≥ $30k，原规则">A 档</span>`;
+const DANGER = {"Low Liquidity":"流动性低", "Creator history of rugged tokens":"创建者有 rug 历史",
+  "Large Amount of LP Unlocked":"大量 LP 未锁", "Single holder ownership":"单一地址持仓高", "High holder concentration":"持仓高度集中",
+  "Copycat token":"仿冒代币", "Mutable metadata":"元数据可修改", "High holder correlation":"持有人高度关联", "Low amount of LP Providers":"LP 提供者少"};
+const reasonZh = r => { if (!r) return "?"; if (REASON[r]) return REASON[r];
+  if (r.startsWith("danger:")) return "高危：" + (DANGER[r.slice(7)] || r.slice(7)); return r; };
+const charts = {};
+function chart(id, cfg){ if (!window.Chart) return; if (charts[id]) charts[id].destroy(); charts[id] = new Chart($(id), cfg); }
+if (window.Chart){ Chart.defaults.color = "#8b949e"; Chart.defaults.borderColor = "#30363d";
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily; }
+
+function render(d){
+  const s = d.scheduler, col = {ok:"var(--g)", stale:"var(--y)", down:"var(--r)"}[s.status];
+  const stxt = {ok:"调度器正常", stale:"调度器延迟", down:"调度器已停止"}[s.status];
+  $("sched").innerHTML = `<span class="dot" style="background:${col}"></span>${stxt}` +
+    ` · 上次 watch ${s.last_watch ? s.last_watch.slice(11,16) : "—"}` + ` · 上次 scan ${s.last_scan ? s.last_scan.slice(11,16) : "—"}`;
+  $("gen").textContent = d.generated_at; $("model").textContent = d.model;
+  const ageMin = (Date.now()/1000 - d.generated_epoch) / 60;
+  $("age").innerHTML = ageMin > 20 ? `<span class="warn">⚠ 数据已 ${Math.round(ageMin)} 分钟未更新</span>` : `${Math.max(0,Math.round(ageMin))} 分钟前`;
+  if (!d.paper) $("err").style.display = "block", $("err").textContent = "注意：PAPER = False（实盘模式）";
+
+  const unreal = d.positions.reduce((a,p) => a + (p.unrealized_usd || 0), 0);
+  const unrealNet = d.positions.reduce((a,p) => a + (p.unrealized_net_usd || 0), 0);
+  const gn = (g, n) => `<span class="${cls(g)}">${sgnUsd(g)}</span><div class="sub">扣成本 <span class="${cls(n)}">${sgnUsd(n)}</span></div>`;
+  const f = d.funnel_today, c = d.config;
+  $("kpis").innerHTML = [
+    ["持仓", `${d.positions.length} / ${c.max_open}`],
+    ["未实现盈亏（毛）", gn(unreal, unrealNet)],
+    ["今日已实现（毛）", gn(d.pnl.realized_today, d.pnl.realized_today_net)],
+    ["累计已实现（毛）", gn(d.pnl.realized_total, d.pnl.realized_total_net)],
+    ["胜率（毛 / 净）", d.pnl.closed_count ? `${d.pnl.wins}/${d.pnl.closed_count}<div class="sub">净 ${d.pnl.wins_net}/${d.pnl.closed_count}</div>` : "—"],
+    ["交易成本估算", `${usd(d.pnl.cost_total)}<div class="sub">卖出金额的 ${d.pnl.cost_pct}%</div>`],
+    ["今日检查", f.checked],
+    ["今日 API 花费", `${usd(d.api.today_usd)} <span class="mut" style="font-size:13px">/ ${usd(d.api.budget_usd,0)}</span>`],
+    ["待 Bot 判断", d.queue.length],
+  ].map(([l,v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+
+  // go-live gates (informational)
+  const g = d.go_live;
+  $("gates").innerHTML = [
+    [g.trades_met, "已平仓笔数", `${g.closed_trades} / ${g.min_trades}`],
+    [g.net_met, "累计净盈亏 > 0（扣成本）", sgnUsd(g.net_total)],
+    [g.beyond_stop_met, `亏损超过止损线（${g.stop_pct}%）的笔数`, `${g.beyond_stop} 笔`],
+  ].map(([ok,l,v]) => `<div class="gate ${ok ? "ok" : "no"}"><div class="ic">${ok ? "✅" : "❌"}</div><div><div class="l">${l}</div>
+    <div class="v">${v}</div><div class="sub">${ok ? "已达标" : "未达标"}</div></div></div>`).join("") +
+    `<div class="gate ${g.all_met ? "ok" : "no"}"><div class="ic">${g.all_met ? "🟢" : "⏸️"}</div><div><div class="l">总体</div>
+    <div class="v">${g.all_met ? "三项均达标" : "继续模拟盘"}</div><div class="sub">达标也需你手动决定是否实盘</div></div></div>`;
+  // [desk fix] per-tier closed trades (A: pool >= $30k, B: $12k-30k with stricter rules)
+  const bt = d.by_tier || {}, lt = c.low_tier || {};
+  $("tiers").innerHTML = ["A","B"].map(t => { const x = bt[t] || {closed:0, net:0, wins_net:0};
+    return `${TIER(t)} 已平仓 ${x.closed} 笔 · 净 <span class="${cls(x.net)}">${sgnUsd(x.net)}</span> · 净赚 ${x.wins_net}/${x.closed}`; }).join(" &nbsp;|&nbsp; ") +
+    (lt.min_liquidity_usd ? `<div class="mut">B 档条件：池子 ${big(lt.min_liquidity_usd)}–${big(c.facts.min_liquidity_usd)}，上线 ≥ ${lt.min_age_min/60} 小时，1h 跌幅 &lt; ${-lt.min_change_1h_pct}%，6h 跌幅 &lt; ${-lt.min_change_6h_pct}%，1h 成交 ≤ ${lt.max_vol1h_to_liq} 倍池子，前十 ≤ ${lt.max_top10_pct}%，买入置信度 ≥ ${lt.min_confidence}</div>` : "");
+
+  // positions
+  $("poscount").textContent = `每笔 $${c.ticket_usd} · 最多 ${c.max_open} 笔`;
+  $("positions").innerHTML = d.positions.length ? d.positions.map(p => {
+    const r = p.rules, peak = Math.max(p.peak, p.current || 0), peakPct = (peak / p.entry - 1) * 100;
+    const ts = r.time_stop_in_hours > 0 ? `${r.time_stop_in_hours.toFixed(1)} 小时后检查（需 ≥ +${r.time_stop_min_pct}%）`
+      : `已到期，需 ≥ +${r.time_stop_min_pct}%`;
+    return `<div class="poscard"><div class="poshead">
+      <a class="sym" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.symbol)}</a> ${TIER(p.tier)}
+      <span class="mut">${short(p.mint)}</span>
+      <span>浮动 <b class="${cls(p.pct)}">${pct(p.pct)}</b> (毛 ${sgnUsd(p.unrealized_usd)} · 扣成本 <b class="${cls(p.unrealized_net_usd)}">${sgnUsd(p.unrealized_net_usd)}</b>)</span>
+      <span class="mut">开仓 ${esc(p.opened)} · 持有 ${p.held_hours} 小时 · 剩余 ${p.qty_left_pct}%</span>
+      ${p.price_error ? `<span class="warn">价格获取失败</span>` : ""}</div>
+      <div class="rules">
+        <div class="rule"><b>入场价</b>${px(p.entry)}</div>
+        <div class="rule"><b>现价</b>${px(p.current)}</div>
+        <div class="rule"><b>最高价</b>${px(peak)} <span class="${cls(peakPct)}">${pct(peakPct)}</span></div>
+        <div class="rule"><b>止损（${r.stop_pct}%）</b>${px(r.stop_price)}</div>
+        <div class="rule"><b>下一档止盈</b>${r.next_take ? `+${r.next_take.at_pct}% 卖 ${r.next_take.sell_frac*100}% @ ${px(r.next_take.price)}` : "已全部触发"}</div>
+        <div class="rule"><b>移动止损（回撤 ${c.exit.trail_pct}%）</b>${r.trail_armed ? "已启用 @ " + px(r.trail_price) : "未启用（首次止盈后启用）"}</div>
+        <div class="rule"><b>时间止损（${c.exit.time_stop_hours}h）</b>${ts}</div>
+        <div class="rule"><b>流动性</b>${big(p.liq_now)} <span class="mut">/ 入场 ${big(p.liq0)}，低于 ${big(r.liq_floor)} 即退出</span></div>
+      </div></div>`;
+  }).join("") : `<div class="empty">当前没有持仓。</div>`;
+
+  // pnl chart: gross and net realized after each sell leg, plus dashed "now incl. unrealized" points
+  const curve = d.pnl.curve, last = curve.length ? curve[curve.length-1].cum : 0, lastN = curve.length ? curve[curve.length-1].cum_net : 0;
+  $("pnlsum").textContent = `${d.pnl.closed_count} 笔卖出 · 已实现 毛 ${sgnUsd(d.pnl.realized_total)} / 净 ${sgnUsd(d.pnl.realized_total_net)} · 含浮动 毛 ${sgnUsd(last + unreal)} / 净 ${sgnUsd(lastN + unrealNet)}`;
+  $("pnlEmpty").style.display = curve.length ? "none" : "block";
+  $("pnlEmpty").textContent = `还没有平仓记录；虚线为当前含浮动盈亏。净值按卖出金额的 ${d.pnl.cost_pct}% 扣除滑点和手续费。`;
+  const labels = ["起点", ...curve.map(x => x.time.slice(5)), "现在"], pad = Array(curve.length).fill(null);
+  chart("pnlChart", {type:"line", data:{labels, datasets:[
+      {label:"毛盈亏", data:[0, ...curve.map(x => x.cum), null], borderColor:"#58a6ff", backgroundColor:"rgba(88,166,255,.10)", fill:true, tension:0, pointRadius:3},
+      {label:"净盈亏（扣成本）", data:[0, ...curve.map(x => x.cum_net), null], borderColor:"#d29922", tension:0, pointRadius:3},
+      {label:"毛·含浮动", data:[...pad, last, +(last + unreal).toFixed(2)], borderColor:"#58a6ff", borderDash:[5,4], pointRadius:3, spanGaps:true},
+      {label:"净·含浮动", data:[...pad, lastN, +(lastN + unrealNet).toFixed(2)], borderColor:"#d29922", borderDash:[5,4], pointRadius:3, spanGaps:true}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{labels:{boxWidth:12}}, tooltip:{callbacks:{label:i => `${i.dataset.label} ${sgnUsd(i.raw)}`}}},
+      scales:{y:{ticks:{callback:v => "$" + v}}}}});
+
+  // funnel
+  const rows = [["检查总数", f.checked, "#8b949e"], ["淘汰：风控限额", f.killed_limits, "#6e7681"], ["淘汰：合约检查", f.killed_facts, "#f85149"],
+    ["淘汰：池子检查", f.killed_pool, "#db6d28"], ["通过 13 项检查", f.passed_13, "#3fb950"], ["→ Grok API 判断", f.to_api, "#bc8cff"],
+    ["→ 排队给 Bot", f.to_bot, "#58a6ff"], ["   其中待判断", f.bot_pending, "#58a6ff"], ["买入（模拟）", f.buy, "#3fb950"]];
+  if (f.never_judged_no_key) rows.splice(7, 0, ["未判断（无密钥）", f.never_judged_no_key, "#6e7681"]);
+  const mx = Math.max(1, f.checked);
+  $("funnel").innerHTML = rows.map(([l,v,c]) => `<div class="frow"><span>${l}</span><div class="bar"><i style="width:${v/mx*100}%;background:${c}"></i></div><b style="text-align:right">${v}</b></div>`).join("");
+
+  // kill reasons
+  const k = d.kill_reasons_today;
+  $("killEmpty").style.display = k.length ? "none" : "block";
+  $("killChart").parentElement.style.display = k.length ? "block" : "none";
+  if (k.length){ $("killChart").parentElement.style.height = Math.max(160, k.length*28+30) + "px";
+    chart("killChart", {type:"bar", data:{labels:k.map(x => reasonZh(x[0])), datasets:[{data:k.map(x => x[1]),
+      backgroundColor:k.map(x => x[0].startsWith("danger") ? "#f85149" : ["thin_pool","bonding_curve","no_pool","no_price","too_fresh","too_old","ticket_too_big","nobody_can_sell"].includes(x[0]) ? "#db6d28" : "#d29922")}]},
+      options:{indexAxis:"y", maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{precision:0}}}}}); }
+
+  // api
+  const a = d.api, used = a.today_usd / a.budget_usd;
+  $("apisum").textContent = `今日 ${usd(a.today_usd)} / 预算 ${usd(a.budget_usd)}`;
+  $("budgetbar").style.width = Math.min(100, used*100) + "%";
+  $("budgetbar").style.background = used >= 1 ? "var(--r)" : used > .7 ? "var(--y)" : "var(--b)";
+  chart("apiChart", {type:"bar", data:{labels:a.by_day.map(x => x.day.slice(5)), datasets:[{label:"花费", data:a.by_day.map(x => x.usd), backgroundColor:"#bc8cff"}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, suggestedMax:a.budget_usd, ticks:{callback:v => "$" + v}}}}});
+
+  // checks
+  $("checks").innerHTML = `<tr><th>时间</th><th>代币</th><th>阶段</th><th>结论</th><th>置信度</th><th>原因</th></tr>` +
+    d.recent_checks.map(r => `<tr><td class="mut">${esc(r.time.slice(5))}</td>
+      <td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.symbol || short(r.mint))}</a></td>
+      <td>${esc(STAGE[r.stage] || r.stage)}</td><td>${tag(r.verdict)}</td>
+      <td>${r.confidence == null ? "" : r.confidence.toFixed(2)}</td>
+      <td class="wrap">${esc(["facts","pool","limits"].includes(r.stage) ? reasonZh(r.reason) : r.reason)}</td></tr>`).join("");
+
+  // queue
+  $("qcount").textContent = `${d.queue.length} 项`;
+  $("queue").innerHTML = d.queue.length ? `<tr><th>代币</th><th>类型</th><th>排队原因</th><th>排队时间</th><th>流动性</th><th>池龄</th></tr>` +
+    d.queue.map(q => `<tr><td><a href="${esc(q.url)}" target="_blank" rel="noopener">${esc(q.symbol)}</a></td><td>${esc(KIND[q.kind] || q.kind)}</td>
+      <td>${esc(q.reason_queued)}</td><td class="mut">${esc(q.queued_at.slice(5))}</td><td>${big(q.liq_usd)}</td>
+      <td>${q.age_min == null ? "—" : (q.age_min/60).toFixed(1) + "h"}</td></tr>`).join("")
+    : `<tr><td class="empty">队列为空。</td></tr>`;
+
+  // bot verdicts
+  $("botv").innerHTML = d.bot_verdicts.length ? `<tr><th>时间</th><th>代币</th><th>结论</th><th>置信度</th><th>X 上的情况 / 主要风险</th></tr>` +
+    d.bot_verdicts.map(v => `<tr><td class="mut">${esc((v.time||"").slice(5))}</td><td>${esc(v.symbol)}<br><span class="mut">${esc(KIND[v.kind]||v.kind)}</span></td>
+      <td>${tag(v.verdict)}</td><td>${v.confidence ?? ""}</td>
+      <td class="wrap">${esc(v.x_read)}<br><span class="warn">风险：</span>${esc(v.main_risk)}${v.action ? `<br><b>${esc(v.action)}</b>` : ""}</td></tr>`).join("")
+    : `<tr><td class="empty">还没有 Bot 结论。</td></tr>`;
+
+  // trades
+  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>毛盈亏</th><th>成本</th><th>净盈亏</th><th>原因</th><th>档</th></tr>` +
+    d.trades.map(t => `<tr><td class="mut">${esc(t.time.slice(5))}</td><td><a href="https://dexscreener.com/solana/${esc(t.mint)}" target="_blank" rel="noopener">${esc(t.symbol)}</a></td>
+      <td>${esc(ACTION[t.action] || t.action)}</td><td>$${esc(t.usd)}</td><td class="${cls(+t.pnl)}">${t.action === "open" ? "" : sgnUsd(+t.pnl)}</td>
+      <td class="mut">${t.action === "open" ? "" : "$" + t.cost.toFixed(2)}</td>
+      <td class="${cls(t.net)}">${t.action === "open" ? "" : sgnUsd(t.net)}</td><td>${esc(t.reason)}</td><td>${TIER(t.tier)}</td></tr>`).join("")
+    : `<tr><td class="empty">还没有成交。</td></tr>`;
+
+  $("alerts").textContent = d.alerts.length ? d.alerts.join("\n") : "暂无提醒。";
+
+  $("runs").innerHTML = `<tr><th>时间</th><th>任务</th><th>退出码</th></tr>` + s.recent_runs.slice().reverse().map(r =>
+    `<tr><td class="mut">${esc(r.time)}</td><td>${esc(r.job)}</td><td class="${r.exit === 0 ? "pos" : "neg"}">${r.exit ?? "—"}</td></tr>`).join("") +
+    `<tr><td colspan="3" class="mut">启动于 ${esc(s.started || "—")} · 最近 30 次失败 ${s.failed_runs_recent} 次</td></tr>`;
+}
+
+async function load(){
+  try {
+    const r = await fetch("data.json?t=" + Date.now(), {cache:"no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+    if ($("err").textContent.startsWith("无法")) $("err").style.display = "none";
+  } catch (e) { $("err").style.display = "block"; $("err").textContent = "无法加载 data.json：" + e.message; }
+}
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>
