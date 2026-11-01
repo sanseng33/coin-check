@@ -42,7 +42,7 @@ LOW_TIER = {                    # tier B = pools from min_liquidity_usd here up 
 RECHECK = {                     # [desk fix] pool-stage rejects used to be final: re-look while they mature
     "reasons": ["thin_pool", "too_fresh", "bonding_curve", "lowtier_too_young", "lowtier_dumping",
                 "lowtier_churn", "lowtier_top10", "dexscreener failed",
-                "rugcheck failed", "fallback_tier_b"],   # [desk fix] 2026-11-01 data-source failures get a second look too
+                "rugcheck failed", "fallback_tier_b", "fallback_no_entry"],   # [desk fix] 2026-11-01 data-source failures get a second look too
     "window_hours": 24,             # only for mints first seen in the last 24h
     "every_min": 60,                # at most one re-check per mint per hour
     "per_run": 5,                   # plus up to 5 re-checks per scan (on top of 5 fresh mints)
@@ -53,6 +53,7 @@ RECHECK = {                     # [desk fix] pool-stage rejects used to be final
 # so every rule it CAN check is tighter, and a fallback token may only enter as tier A with a higher bar.
 FALLBACK = {
     "enabled": True,
+    "allow_entries": False,         # [desk fix] 2026-11-01 owner: "备用源只过滤，永不开仓" -> fallback filters only, never opens a position
     "max_top10_pct": 25,            # tier A rule is 30: 5 points tighter to stand in for the missing insider graph
     "max_top10_pct_no_creator": 20, # creator wallet unknown -> dev holdings unverifiable -> tighter still
     "max_single_holder_pct": 8,     # one non-pool wallet above 8% = the "Single holder ownership" danger rugcheck would flag

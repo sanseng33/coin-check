@@ -78,6 +78,9 @@ def check(mint: str) -> dict:
     m["tier"] = tier(m)                                          # [desk fix] A/B, travels to Grok/queue/book
     if src == "onchain_fallback" and FALLBACK["tier_a_only"] and m["tier"] != "A":   # [desk fix] fallback: A only
         return {"stage": "pool", "verdict": "SKIP", "reason": "fallback_tier_b", "symbol": token["symbol"], "source": src}
+    if src == "onchain_fallback" and not FALLBACK.get("allow_entries", False):   # [desk fix] owner: fallback filters only
+        return {"stage": "pool", "verdict": "SKIP", "reason": "fallback_no_entry", "symbol": token["symbol"], "source": src,
+                "price": m["price"], "liq_usd": m["liq_usd"], "url": m["url"], "tier": m["tier"]}
     # [desk] hybrid check 14: fresh + under budget -> paid API now; everything else -> bot's free X queue
     symbol = m["symbol"] or token["symbol"]
     spent = xqueue.spent_today()

@@ -30,7 +30,9 @@ elif verdict == "BUY":                                     # re-run limits + poo
     except Exception as e:
         m, k = None, f"dexscreener failed: {e}"
     t = tier(m) if m else "A"
-    if not (g or k) and src == "onchain_fallback" and t != "A" and FALLBACK["tier_a_only"]:   # [desk fix]
+    if not (g or k) and src == "onchain_fallback" and not FALLBACK.get("allow_entries", False):   # [desk fix] owner: never open via fallback
+        row["verdict"], row["reason"] = "SKIP", f"bot BUY, but fallback_no_entry: {why}"
+    elif not (g or k) and src == "onchain_fallback" and t != "A" and FALLBACK["tier_a_only"]:   # [desk fix]
         row["verdict"], row["reason"] = "SKIP", f"bot BUY, but fallback_tier_b: {why}"
     elif not (g or k) and src == "onchain_fallback" and conf < FALLBACK["min_confidence"]:     # [desk fix]
         row["verdict"], row["reason"] = "SKIP", f"low confidence {conf} (fallback needs {FALLBACK['min_confidence']}): {why}"

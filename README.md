@@ -176,3 +176,6 @@ Page: branch `gh-pages` = `index.html` + `data.json` + `.nojekyll` (+ `CNAME`), 
 - Private repos: GitHub Pages from a private repo needs a paid plan (Pro / Team / Enterprise). Access-restricted
   ("private") Pages, visible only to people with repo access, needs GitHub Enterprise Cloud; on Pro/Team the site is public
   even though the repo is private. The data is paper-only with no secrets, but it does show strategy, positions and costs.
+
+### 2026-11-01: on-chain fallback is filter-only
+Owner decision: "备用源只过滤，永不开仓". `FALLBACK["allow_entries"] = False` in config.py. When rugcheck is down, a token that passes the on-chain fallback is logged as SKIP `fallback_no_entry`. It is never sent to the paid API or the X queue, and `apply_verdict.py` refuses a BUY whose facts came from the fallback. `fallback_no_entry` is in `RECHECK["reasons"]`, so the token is re-checked hourly for 24h and can still enter once rugcheck is back.
