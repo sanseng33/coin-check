@@ -1,7 +1,7 @@
 # apply_verdict.py  [desk] write the bot's free-X-search verdict for one queued mint.
 # python3 apply_verdict.py <mint> <BUY|SKIP|HOLD|EXIT_SUGGESTED> <confidence> "<why>" "<x_read>" "<main_risk>"
 import json, sys, time
-from config import MIN_CONFIDENCE, PAPER, TICKET_USD, LOW_TIER
+from config import MIN_CONFIDENCE, PAPER, TICKET_USD, LOW_TIER, FALLBACK
 from market import pool, market_kill, tier
 from check import log
 import book, xqueue
@@ -16,8 +16,9 @@ if verdict not in ok:
     sys.exit(f"{item['kind']} item takes {'/'.join(ok)}, got {verdict}")
 
 sym, now = item["symbol"], time.strftime("%Y-%m-%d %H:%M")
+src = ((item.get("payload") or {}).get("token") or {}).get("source") or "rugcheck"   # [desk fix] facts source
 row = {"time": now, "mint": mint, "symbol": sym, "stage": "bot_x", "verdict": verdict,
-       "confidence": conf, "reason": why}
+       "confidence": conf, "reason": why, "source": src}
 action = None
 
 if verdict == "BUY" and conf < MIN_CONFIDENCE:
@@ -29,13 +30,17 @@ elif verdict == "BUY":                                     # re-run limits + poo
     except Exception as e:
         m, k = None, f"dexscreener failed: {e}"
     t = tier(m) if m else "A"
-    if not (g or k) and t == "B" and conf < LOW_TIER["min_confidence"]:   # [desk fix] tier B needs more
+    if not (g or k) and src == "onchain_fallback" and t != "A" and FALLBACK["tier_a_only"]:   # [desk fix]
+        row["verdict"], row["reason"] = "SKIP", f"bot BUY, but fallback_tier_b: {why}"
+    elif not (g or k) and src == "onchain_fallback" and conf < FALLBACK["min_confidence"]:     # [desk fix]
+        row["verdict"], row["reason"] = "SKIP", f"low confidence {conf} (fallback needs {FALLBACK['min_confidence']}): {why}"
+    elif not (g or k) and t == "B" and conf < LOW_TIER["min_confidence"]:   # [desk fix] tier B needs more
         row["verdict"], row["reason"] = "SKIP", f"low confidence {conf} (tier B needs {LOW_TIER['min_confidence']}): {why}"
     elif g or k:
         row["verdict"], row["reason"] = "SKIP", f"bot BUY, but now {g or k}: {why}"
     else:
-        book.open_position(mint, m["symbol"] or sym, m["price"], m["liq_usd"], tier=t)
-        action = f"PAPER BUY ${TICKET_USD} {sym} at {m['price']} tier {t}"
+        book.open_position(mint, m["symbol"] or sym, m["price"], m["liq_usd"], tier=t, source=src)
+        action = f"PAPER BUY ${TICKET_USD} {sym} at {m['price']} tier {t} src {src}"
 elif verdict == "EXIT_SUGGESTED" and mint in book.load():
     try:
         m = pool(mint); price = m["price"] if m else 0.0

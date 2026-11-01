@@ -25,7 +25,7 @@ for row in rows:
     first.setdefault(row["mint"], row)
     last[row["mint"]] = row
 due = [m for m, row in last.items()
-       if row["stage"] == "pool" and row["verdict"] == "SKIP"
+       if row["stage"] in ("pool", "facts") and row["verdict"] == "SKIP"   # [desk fix] facts: only data-source failures
        and any((row["reason"] or "").startswith(x) for x in RECHECK["reasons"])
        and now - ts(first[m]["time"]) <= RECHECK["window_hours"] * 3600
        and now - ts(row["time"]) >= RECHECK["every_min"] * 60]

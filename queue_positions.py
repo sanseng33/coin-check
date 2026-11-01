@@ -3,6 +3,7 @@ import time
 import book, xqueue
 from market import pool
 from rugcheck import report
+import onchain   # [desk fix] fallback facts for position reviews
 
 added = 0
 for mint, p in book.load().items():
@@ -13,9 +14,12 @@ for mint, p in book.load().items():
     except Exception as e:
         m = {"error": f"dexscreener failed: {e}"}
     try:
-        t = report(mint)
+        t = report(mint); t["source"] = "rugcheck"
     except Exception as e:
-        t = {"error": f"rugcheck failed: {e}"}
+        try:                                    # [desk fix] rugcheck down -> on-chain facts, still informational
+            t = onchain.report(mint); t["fallback_kill"] = onchain.fact_kill(t)
+        except Exception as e2:
+            t = {"error": f"rugcheck failed: {e} | fallback {e2}"}
     pos = {"entry": p["entry"], "peak": p["peak"], "liq0": p["liq0"], "steps": p["steps"],
            "held_hours": round((time.time() - p["opened"]) / 3600, 1),
            "pct_now": round((m["price"] / p["entry"] - 1) * 100, 1) if m and m.get("price") else None}

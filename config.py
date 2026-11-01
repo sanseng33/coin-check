@@ -41,10 +41,25 @@ LOW_TIER = {                    # tier B = pools from min_liquidity_usd here up 
 }
 RECHECK = {                     # [desk fix] pool-stage rejects used to be final: re-look while they mature
     "reasons": ["thin_pool", "too_fresh", "bonding_curve", "lowtier_too_young", "lowtier_dumping",
-                "lowtier_churn", "lowtier_top10", "dexscreener failed"],
+                "lowtier_churn", "lowtier_top10", "dexscreener failed",
+                "rugcheck failed", "fallback_tier_b"],   # [desk fix] 2026-11-01 data-source failures get a second look too
     "window_hours": 24,             # only for mints first seen in the last 24h
     "every_min": 60,                # at most one re-check per mint per hour
     "per_run": 5,                   # plus up to 5 re-checks per scan (on top of 5 fresh mints)
+}
+
+# [desk fix] 2026-11-01 on-chain fallback (onchain.py), owner-approved ("加链上备用数据源").
+# Used only when rugcheck.xyz fails. It cannot see rugcheck's risk score, insider graph or creator rug history,
+# so every rule it CAN check is tighter, and a fallback token may only enter as tier A with a higher bar.
+FALLBACK = {
+    "enabled": True,
+    "max_top10_pct": 25,            # tier A rule is 30: 5 points tighter to stand in for the missing insider graph
+    "max_top10_pct_no_creator": 20, # creator wallet unknown -> dev holdings unverifiable -> tighter still
+    "max_single_holder_pct": 8,     # one non-pool wallet above 8% = the "Single holder ownership" danger rugcheck would flag
+    "max_same_size_holders": 4,     # 4+ of the top 10 with near-identical balances = likely one bundled buyer
+    "twin_tolerance": 0.01,         # "near-identical" = within 1% of each other
+    "tier_a_only": True,            # pool must be >= FACTS min_liquidity_usd ($30k); no tier B entries via fallback
+    "min_confidence": 0.8,          # Grok / bot BUY needs >= 0.8 (tier A normally MIN_CONFIDENCE 0.7)
 }
 
 EXIT = {

@@ -117,6 +117,7 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:4px 16px 24px}
 
   <section class="card s12">
     <h2>最近检查的代币 <small>每个代币取最新结论</small></h2>
+    <div class="sub" id="sources" style="margin-bottom:6px"></div>
     <div class="tw scroll"><table id="checks"></table></div>
   </section>
 
@@ -168,7 +169,12 @@ const REASON = {thin_pool:"池子太浅", insiders:"内部人/捆绑", top10_hea
   already_rugged:"已被 rug", no_report:"无 Rugcheck 报告", already_open:"已持有", max_open:"持仓已满", cooldown:"冷却中",
   max_entries_today:"今日开仓已满", halted_daily_loss:"日亏损熔断",
   bonding_curve:"还在 pump.fun 内盘", lowtier_too_young:"小池子：上线不足 2 小时", lowtier_dumping:"小池子：正在下跌",
-  lowtier_churn:"小池子：成交量异常（疑似刷量）", lowtier_top10:"小池子：前十持仓 > 20%"};
+  lowtier_churn:"小池子：成交量异常（疑似刷量）", lowtier_top10:"小池子：前十持仓 > 20%",
+  fb_top10_heavy:"备用源：前十持仓过重", fb_single_holder:"备用源：单一地址持仓过高", fb_bundle_suspect:"备用源：疑似捆绑（同额钱包）",
+  fb_not_pumpfun:"备用源：非 pump.fun 币，无法核验", fb_no_canonical_pool:"备用源：找不到官方迁移池", fb_top_pool_not_canonical:"备用源：最大池不是官方迁移池",
+  fb_metadata_mutable:"备用源：元数据可修改", fallback_tier_b:"备用源：只允许 A 档池子"};
+const SRC = s => s === "onchain_fallback" ? `<span class="tag t-QUEUED" title="rugcheck 不可用，用链上数据（规则更严）">链上备用</span>`
+  : s === "none" ? `<span class="tag t-SKIP" title="rugcheck 和链上备用都取不到">无数据</span>` : s === "rugcheck" ? `<span class="tag">rugcheck</span>` : "";
 const TIER = t => t === "B" ? `<span class="tag t-QUEUED" title="小池子档 $12k–30k，规则更严">B 档</span>` : `<span class="tag" title="池子 ≥ $30k，原规则">A 档</span>`;
 const DANGER = {"Low Liquidity":"流动性低", "Creator history of rugged tokens":"创建者有 rug 历史",
   "Large Amount of LP Unlocked":"大量 LP 未锁", "Single holder ownership":"单一地址持仓高", "High holder concentration":"持仓高度集中",
@@ -229,7 +235,7 @@ function render(d){
     const ts = r.time_stop_in_hours > 0 ? `${r.time_stop_in_hours.toFixed(1)} 小时后检查（需 ≥ +${r.time_stop_min_pct}%）`
       : `已到期，需 ≥ +${r.time_stop_min_pct}%`;
     return `<div class="poscard"><div class="poshead">
-      <a class="sym" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.symbol)}</a> ${TIER(p.tier)}
+      <a class="sym" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.symbol)}</a> ${TIER(p.tier)} ${SRC(p.source)}
       <span class="mut">${short(p.mint)}</span>
       <span>浮动 <b class="${cls(p.pct)}">${pct(p.pct)}</b> (毛 ${sgnUsd(p.unrealized_usd)} · 扣成本 <b class="${cls(p.unrealized_net_usd)}">${sgnUsd(p.unrealized_net_usd)}</b>)</span>
       <span class="mut">开仓 ${esc(p.opened)} · 持有 ${p.held_hours} 小时 · 剩余 ${p.qty_left_pct}%</span>
@@ -286,12 +292,14 @@ function render(d){
     options:{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, suggestedMax:a.budget_usd, ticks:{callback:v => "$" + v}}}}});
 
   // checks
-  $("checks").innerHTML = `<tr><th>时间</th><th>代币</th><th>阶段</th><th>结论</th><th>置信度</th><th>原因</th></tr>` +
+  const so = d.sources_today || {};   // [desk fix] fact source split for today
+  $("sources").innerHTML = `今日合约数据来源：rugcheck ${so.rugcheck || 0} · 链上备用 ${so.onchain_fallback || 0} · 两者都取不到 ${so.none || 0}`;
+  $("checks").innerHTML = `<tr><th>时间</th><th>代币</th><th>阶段</th><th>结论</th><th>置信度</th><th>原因</th><th>数据源</th></tr>` +
     d.recent_checks.map(r => `<tr><td class="mut">${esc(r.time.slice(5))}</td>
       <td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.symbol || short(r.mint))}</a></td>
       <td>${esc(STAGE[r.stage] || r.stage)}</td><td>${tag(r.verdict)}</td>
       <td>${r.confidence == null ? "" : r.confidence.toFixed(2)}</td>
-      <td class="wrap">${esc(["facts","pool","limits"].includes(r.stage) ? reasonZh(r.reason) : r.reason)}</td></tr>`).join("");
+      <td class="wrap">${esc(["facts","pool","limits"].includes(r.stage) ? reasonZh(r.reason) : r.reason)}</td><td>${SRC(r.source)}</td></tr>`).join("");
 
   // queue
   $("qcount").textContent = `${d.queue.length} 项`;
@@ -309,11 +317,11 @@ function render(d){
     : `<tr><td class="empty">还没有 Bot 结论。</td></tr>`;
 
   // trades
-  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>毛盈亏</th><th>成本</th><th>净盈亏</th><th>原因</th><th>档</th></tr>` +
+  $("trades").innerHTML = d.trades.length ? `<tr><th>时间</th><th>代币</th><th>动作</th><th>金额</th><th>毛盈亏</th><th>成本</th><th>净盈亏</th><th>原因</th><th>档</th><th>数据源</th></tr>` +
     d.trades.map(t => `<tr><td class="mut">${esc(t.time.slice(5))}</td><td><a href="https://dexscreener.com/solana/${esc(t.mint)}" target="_blank" rel="noopener">${esc(t.symbol)}</a></td>
       <td>${esc(ACTION[t.action] || t.action)}</td><td>$${esc(t.usd)}</td><td class="${cls(+t.pnl)}">${t.action === "open" ? "" : sgnUsd(+t.pnl)}</td>
       <td class="mut">${t.action === "open" ? "" : "$" + t.cost.toFixed(2)}</td>
-      <td class="${cls(t.net)}">${t.action === "open" ? "" : sgnUsd(t.net)}</td><td>${esc(t.reason)}</td><td>${TIER(t.tier)}</td></tr>`).join("")
+      <td class="${cls(t.net)}">${t.action === "open" ? "" : sgnUsd(t.net)}</td><td>${esc(t.reason)}</td><td>${TIER(t.tier)}</td><td>${SRC(t.source)}</td></tr>`).join("")
     : `<tr><td class="empty">还没有成交。</td></tr>`;
 
   $("alerts").textContent = d.alerts.length ? d.alerts.join("\n") : "暂无提醒。";

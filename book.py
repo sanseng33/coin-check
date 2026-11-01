@@ -17,7 +17,7 @@ def trades() -> list[dict]:
     return list(csv.DictReader(open(TRADES))) if os.path.exists(TRADES) else []
 
 
-FIELDS = ["time", "mint", "symbol", "action", "usd", "pnl", "reason", "tier"]   # [desk fix] + tier (A/B)
+FIELDS = ["time", "mint", "symbol", "action", "usd", "pnl", "reason", "tier", "source"]   # [desk fix] + tier (A/B), + facts source
 
 
 def _migrate():
@@ -26,18 +26,18 @@ def _migrate():
         return
     with open(TRADES) as f:
         head = f.readline().strip().split(",")
-    if "tier" in head:
+    if "tier" in head and "source" in head:
         return
     rows = list(csv.DictReader(open(TRADES)))
     with open(TRADES + ".tmp", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
         for r in rows:
-            w.writerow({**r, "tier": r.get("tier") or "A"})
+            w.writerow({**r, "tier": r.get("tier") or "A", "source": r.get("source") or "rugcheck"})   # [desk fix] old rows = rugcheck
     os.replace(TRADES + ".tmp", TRADES)
 
 
-def record(mint, symbol, action, usd, pnl, reason, tier="A"):
+def record(mint, symbol, action, usd, pnl, reason, tier="A", source="rugcheck"):
     _migrate()
     new = not os.path.exists(TRADES)
     with open(TRADES, "a", newline="") as f:
@@ -45,7 +45,8 @@ def record(mint, symbol, action, usd, pnl, reason, tier="A"):
         if new:
             w.writeheader()
         w.writerow({"time": time.strftime("%Y-%m-%d %H:%M"), "mint": mint, "symbol": symbol,
-                    "action": action, "usd": round(usd, 2), "pnl": round(pnl, 2), "reason": reason, "tier": tier})
+                    "action": action, "usd": round(usd, 2), "pnl": round(pnl, 2), "reason": reason, "tier": tier,
+                    "source": source})
 
 
 def today_pnl() -> float:
@@ -68,12 +69,12 @@ def guard(mint: str) -> str | None:
     return None
 
 
-def open_position(mint, symbol, price, liq_usd, usd=TICKET_USD, tier="A"):
+def open_position(mint, symbol, price, liq_usd, usd=TICKET_USD, tier="A", source="rugcheck"):
     book = load()
     book[mint] = {"symbol": symbol, "entry": price, "qty0": usd / price, "qty": usd / price,
-                  "peak": price, "liq0": liq_usd, "opened": time.time(), "steps": 0, "tier": tier}
+                  "peak": price, "liq0": liq_usd, "opened": time.time(), "steps": 0, "tier": tier, "source": source}
     save(book)
-    record(mint, symbol, "open", usd, 0, "entry", tier)
+    record(mint, symbol, "open", usd, 0, "entry", tier, source)
 
 
 def sell(mint, frac_of_original, price, reason) -> float:
@@ -84,7 +85,7 @@ def sell(mint, frac_of_original, price, reason) -> float:
     pnl = q * (price - p["entry"])
     p["qty"] -= q
     action = "close" if p["qty"] <= p["qty0"] * 1e-6 else "partial"
-    record(mint, p["symbol"], action, q * price, pnl, reason, p.get("tier", "A"))
+    record(mint, p["symbol"], action, q * price, pnl, reason, p.get("tier", "A"), p.get("source", "rugcheck"))
     if action == "close":
         del book[mint]
     save(book)

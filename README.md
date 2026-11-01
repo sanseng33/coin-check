@@ -45,6 +45,7 @@ No cron on this box (PID 1 is tini, no crond), so `scheduler.py` is a small loop
 - `config.py` - every number (article values; owner-approved changes: MODEL, LOW_TIER/RECHECK). `PAPER = True`.
 - `book.py` - limits, positions.json, trades.csv
 - `rugcheck.py` - checks 1-9 (Rugcheck API), `market.py` - checks 10-13 (DexScreener API)
+- `onchain.py` - [desk fix] on-chain fallback for checks 1-9 when Rugcheck is down (see below)
 - `grok.py` + `prompts.py` - check 14 (xAI + X search, the only paid step)
 - `check.py` - the pipeline; logs every verdict to `checks.csv`
 - `original/` - the code blocks exactly as published, for diffing (`diff original/grok.py grok.py`)
@@ -105,6 +106,42 @@ grok.py also refuses (SKIP) any answer where no X search actually ran. Every cal
   Replay with the desk's exits: a flat $10k floor buys 10 of them in their first hour, all 10 hit the -35% stop. With the tier B rules,
   none of the 66 passes at check time; re-fetched now, 0 pass (closest: SUPER top-10 23.6%, HASHTAG 6h -51.5%).
   Exits, ticket, MAX_OPEN and the loss halt are unchanged. Compare A vs B at the week-end review before keeping tier B.
+
+## On-chain fallback when rugcheck is down (2026-11-01, owner-approved: "加链上备用数据源")
+Why: from 10/31 ~10:04 to ~22:00 (UTC+8) rugcheck.xyz answered 400 "unable to generate report" for every token, so 77 checks
+ended at `rugcheck failed` and the desk effectively stopped filtering. `onchain.py` + `config.py` `FALLBACK`, all `[desk fix]`.
+- **When** - only if `rugcheck.report()` raises (HTTP error, timeout) or returns no score. A real rugcheck report always wins.
+- **Data (free, no keys)** - Solana JSON-RPC: official `api.mainnet-beta.solana.com` for everything except
+  `getTokenLargestAccounts` (it 429s that call for everyone), which goes to `public.rpc.solanavibestation.com` first.
+  10 s timeouts, 2 tries per endpoint, 0.25 s gap between calls; about 7 RPC calls + 1 DexScreener call, ~15 s per token.
+  Needs `solders` for PDA derivation (`pip install --user --break-system-packages solders`); missing -> fallback errors -> SKIP.
+- **What it reads** - mint account (mint/freeze authority, supply, Token-2022 extensions, metadata update authority);
+  pump.fun bonding-curve PDA (creator wallet, `complete` = graduated); the canonical PumpSwap pool PDA
+  (LP mint -> LP burned % = 1 - LP mint supply / pool lp_supply); top 20 token accounts -> owners -> drops pool vaults
+  (bonding curve, canonical pool, every DexScreener pairAddress, known AMM authorities, accounts owned by AMM programs);
+  creator's token accounts for the mint (dev %).
+- **Scope** - pump.fun tokens that graduated to their canonical PumpSwap pool, and that pool must be the biggest one.
+  That is the only case where LP lock and the creator can be proven from chain state; everything else is SKIP.
+- **Rules (stricter than rugcheck)** - mint + freeze authority revoked; no Token-2022 permanent delegate / transfer hook /
+  transfer fee / non-transferable / pausable / default-frozen; metadata immutable; LP burned >= 90%; top-10 <= 25%
+  (rugcheck path 30; 20 if the creator is unknown); any single non-pool wallet <= 8%; dev <= 5%; fewer than 4 of the top 10 with
+  balances within 1% of each other (bundle proxy for the missing insider graph). Pool: tier A only (>= $30k, `fallback_tier_b`
+  otherwise); BUY needs confidence >= 0.8 (Grok API and bot queue alike).
+- **Not verifiable -> covered by the stricter caps above**: rugcheck risk score, insider graph, creator rug history, "rugged" flag.
+- **Fail closed** - any required fact missing -> `stage=facts, SKIP, source=none`, reason `rugcheck failed: ... | fallback rpc_unavailable:...`
+  (or `mint_account_unreadable`, `dexscreener_unavailable`, `no_holders`). Kill reasons are prefixed `fb_`.
+- **Tagging** - `checks.csv` got a `source` column (`rugcheck` / `onchain_fallback` / `none`; old rows back-filled),
+  `positions.json` / `trades.csv` carry `source` (older = rugcheck), queue payloads carry `token.source`.
+  Dashboard: source split for today above 最近检查的代币, plus a 数据源 column on checks / trades / positions.
+- **Re-checks** - `rugcheck failed` and `fallback_tier_b` rows from the last 24h are re-checked like pool-stage rejects.
+- **Position reviews** - `queue_positions.py` uses the fallback facts if rugcheck fails; `watch.py` (exits) only uses DexScreener.
+- Try it: `python3 onchain.py <MINT>` (prints the facts and the fallback verdict, writes nothing).
+- **Test 2026-11-01** (rugcheck had recovered, so both sources ran on the same 103 mints: JOB, the 77 that hit `rugcheck failed`
+  on 10/31, 25 recent): JOB fallback = top-10 7.1% / dev 0% / LP 100% / same creator, identical to rugcheck. On 38 graduated
+  tokens top-10 matched rugcheck within 0.1 pt on 28, never lower than rugcheck by more than 0.1 (max +4.7, i.e. stricter),
+  dev within 0.01 pt, LP 100% on all. End to end through the pool stage, 2 of 102 would pass the fallback (Leverhedge, which
+  rugcheck also passes, and BLUE, which rugcheck kills for 8 insiders: the known gap). Simulated outage: BUY at 0.75 -> SKIP,
+  0.85 -> BUY, RPC down -> SKIP `source=none`.
 
 ## Trading-cost accounting (reporting only)
 `PAPER_COST_PCT = 5.0` in config.py: a round-trip slippage + fees estimate charged on each SELL leg's notional
