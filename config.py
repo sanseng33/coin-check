@@ -65,7 +65,7 @@ FALLBACK = {
 
 EXIT = {
     "stop_pct": -35,                        # hard stop from entry
-    "ladder": [(100, 0.50), (200, 0.25)],   # +100% sells half, +200% sells a quarter
+    "ladder": [(70, 0.50), (200, 0.25)],    # [desk fix] 2026-11-02 owner: first rung +100% -> +70% sells half; +200% sells a quarter
     "trail_pct": 30,                        # the rest: out when price falls 30% from its peak
     "time_stop_hours": 6,                   # not up 20% after 6 hours -> out, dead money
     "time_stop_min_pct": 20,
